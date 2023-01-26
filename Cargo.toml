@@ -1,0 +1,15 @@
+[package]
+name = "lightnode"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.3.0"
+actix-multipart = "0.5.0"
+futures-util = "0.3.25"
+uuid = { version = "1.2.2", features = ["v4"] }
+sanitize-filename = "0.4.0"
+rust-s3 = { version = "0.32.3", features=["with-tokio"]}
+tokio = "1.24.2"
