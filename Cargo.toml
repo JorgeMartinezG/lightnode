@@ -13,3 +13,4 @@ uuid = { version = "1.2.2", features = ["v4"] }
 sanitize-filename = "0.4.0"
 rust-s3 = { version = "0.32.3", features=["with-tokio"]}
 tokio = "1.24.2"
+zip = "0.6.3"

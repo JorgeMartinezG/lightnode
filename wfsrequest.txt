@@ -1,0 +1,1 @@
+https://geonode.wfp.org/geoserver/ows?access_token=None?outputFormat=SHAPE-ZIP&service=WFS&srs=EPSG%3A4326&request=GetFeature&format_options=charset%3AUTF-8&typename=geonode%3Afood_systems_sites_namibia&version=1.0.0
