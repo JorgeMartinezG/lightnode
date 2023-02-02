@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use actix_multipart::Field;
 use actix_web::web;
 use futures_util::TryStreamExt as _;
-use std::fs::{create_dir, File};
+use std::fs::{create_dir, remove_dir_all, File};
 
 use flatgeobuf::FgbCrs;
 use flatgeobuf::FgbWriter;
@@ -13,12 +13,13 @@ use flatgeobuf::FgbWriterOptions;
 use flatgeobuf::GeometryType;
 
 use shapefile::ShapeType;
+use uuid::Uuid;
 use zip::ZipArchive;
 
 use crate::errors::AppError;
 
 pub struct Layer {
-    uuid: String,
+    pub uuid: String,
     folder_path: PathBuf,
 }
 
@@ -39,30 +40,34 @@ impl FileExtension {
 }
 
 impl Layer {
-    pub fn new(id: String) -> Layer {
-        let folder_path = PathBuf::from(TMP_FOLDER).join(&id);
+    pub fn new() -> Layer {
+        let layer_uuid = Uuid::new_v4().to_string();
+        let folder_path = PathBuf::from(TMP_FOLDER).join(&layer_uuid);
 
         let layer = Layer {
-            uuid: id,
+            uuid: layer_uuid,
             folder_path: folder_path.clone(),
         };
 
         return layer;
     }
 
-    pub async fn store(self, field: &mut Field) -> Result<String, AppError> {
-        let fgb_path = self
+    pub async fn store(self, field: &mut Field) -> Result<Self, AppError> {
+        Ok(self
             .create_folder()?
             .save_zip_to_disk(field)
             .await?
             .extract_zip()?
-            .to_geobuff()?;
-
-        Ok(fgb_path)
+            .to_geobuff()?)
     }
 
     fn create_folder(self) -> Result<Self, AppError> {
         create_dir(&self.folder_path)?;
+        Ok(self)
+    }
+
+    pub fn delete_folder(self) -> Result<Self, AppError> {
+        remove_dir_all(&self.folder_path)?;
         Ok(self)
     }
 
@@ -75,6 +80,12 @@ impl Layer {
         let str_path = path.into_os_string().into_string()?;
 
         return Ok(str_path);
+    }
+
+    pub fn get_fgb_path(&self) -> Result<String, AppError> {
+        let fgb_path = self.create_path(FileExtension::Flatgeobuf)?;
+
+        Ok(fgb_path)
     }
 
     async fn save_zip_to_disk(self, field: &mut Field) -> Result<Self, AppError> {
@@ -134,7 +145,7 @@ impl Layer {
         Ok(self)
     }
 
-    fn to_geobuff(self) -> Result<String, AppError> {
+    fn to_geobuff(self) -> Result<Self, AppError> {
         let shp_file_path = self.create_path(FileExtension::Shapefile)?;
         let mut reader = shapefile::Reader::from_path(shp_file_path)?;
         let fgb_path = self.create_path(FileExtension::Flatgeobuf)?;
@@ -170,6 +181,6 @@ impl Layer {
         fgb.write(&mut file)?;
         file.flush()?;
 
-        Ok(fgb_path)
+        Ok(self)
     }
 }

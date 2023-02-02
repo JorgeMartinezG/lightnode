@@ -11,6 +11,13 @@ pub enum AppError {
     ShapefileError(shapefile::Error),
     ShpToGeotypesError,
     GeozeroError(geozero::error::GeozeroError),
+    S3Error(s3::error::S3Error),
+}
+
+impl From<s3::error::S3Error> for AppError {
+    fn from(error: s3::error::S3Error) -> Self {
+        AppError::S3Error(error)
+    }
 }
 
 impl From<shapefile::Error> for AppError {
@@ -83,6 +90,7 @@ impl fmt::Display for AppError {
             AppError::GeozeroError(error) => {
                 formatter.write_str(format!("SHP::{}", error).as_str())
             }
+            AppError::S3Error(error) => formatter.write_str(format!("S3::{}", error).as_str()),
         }
     }
 }

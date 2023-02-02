@@ -1,3 +1,4 @@
+mod client;
 mod errors;
 mod layer;
 
@@ -7,13 +8,8 @@ use actix_multipart::Multipart;
 use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use futures_util::TryStreamExt as _;
 use std::fs::create_dir;
-use uuid::Uuid;
 
-use s3::bucket::Bucket;
-use s3::creds::Credentials;
-use s3::region::Region;
-use s3::BucketConfiguration;
-
+use crate::client::S3Client;
 use crate::errors::AppError;
 use crate::layer::Layer;
 
@@ -22,53 +18,15 @@ const TMP_FOLDER: &str = "./tmp";
 async fn post_handler(mut payload: Multipart) -> Result<HttpResponse, AppError> {
     // iterate over multipart stream
     while let Some(mut field) = payload.try_next().await? {
-        let layer_uuid = Uuid::new_v4().to_string();
-        let fgb_path = Layer::new(layer_uuid).store(&mut field).await;
+        let client = S3Client::new()?.create_bucket_if_not_exists().await?;
 
-        println!("{:?}", fgb_path);
+        let layer = Layer::new().store(&mut field).await?;
 
-        /*
-        // Instantiate bucket.
-        let bucket = Bucket::new(
-            BUCKET_NAME,
-            Region::Custom {
-                region: "".to_owned(),
-                endpoint: "http://localhost:9000".to_owned(),
-            },
-            Credentials {
-                access_key: Some("3MCNVMfGOIQnTJiP".to_owned()),
-                secret_key: Some("LGz1geDQfBEJ6hTXTC2Y39zLJRJXBjVI".to_owned()),
-                security_token: None,
-                session_token: None,
-                expiration: None,
-            },
-        )
-        .expect("Could not create bucket instance")
-        .with_path_style();
+        let status_code = client.upload(&layer).await?;
 
-        let result = bucket.head_object("/").await;
+        layer.delete_folder()?;
 
-        if result.is_err() {
-            let create_result = Bucket::create_with_path_style(
-                bucket.name.as_str(),
-                bucket.region.clone(),
-                bucket.credentials.clone(),
-                BucketConfiguration::default(),
-            )
-            .await
-            .expect("Could not create bucket");
-
-            println!(
-                "=== Bucket created\n{} - {} - {}",
-                bucket.name, create_result.response_code, create_result.response_text
-            );
-        }
-
-        let mut path = tokio::fs::File::open(filepath.clone().as_ref())
-            .await
-            .unwrap();
-        let _status_code = bucket.put_object_stream(&mut path, "/path").await.unwrap();
-        */
+        println!("{:?}", status_code);
     }
 
     Ok(HttpResponse::Ok().into())
@@ -94,7 +52,7 @@ async fn main() -> Result<(), AppError> {
 
     let tmp_path = Path::new(TMP_FOLDER);
     if tmp_path.exists() == false {
-        create_dir(tmp_path).expect("Could not create temporal directory");
+        create_dir(tmp_path)?;
     }
 
     HttpServer::new(|| {
