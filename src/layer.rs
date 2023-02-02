@@ -1,9 +1,9 @@
 use crate::TMP_FOLDER;
 use std::io::{copy, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use actix_multipart::Field;
-use actix_web::{web, Error};
+use actix_web::web;
 use futures_util::TryStreamExt as _;
 use std::fs::{create_dir, File};
 
@@ -14,6 +14,8 @@ use flatgeobuf::GeometryType;
 
 use shapefile::ShapeType;
 use zip::ZipArchive;
+
+use crate::errors::AppError;
 
 pub struct Layer {
     uuid: String,
@@ -48,34 +50,35 @@ impl Layer {
         return layer;
     }
 
-    pub async fn store(self, field: &mut Field) -> String {
-        self.create_folder()
+    pub async fn store(self, field: &mut Field) -> Result<String, AppError> {
+        let fgb_path = self
+            .create_folder()?
             .save_zip_to_disk(field)
-            .await
-            .expect("Could not create zip file")
-            .extract_zip()
-            .to_geobuff()
+            .await?
+            .extract_zip()?
+            .to_geobuff()?;
+
+        Ok(fgb_path)
     }
 
-    fn create_folder(self) -> Self {
-        create_dir(&self.folder_path).expect("Could not create layer directory");
-        self
+    fn create_folder(self) -> Result<Self, AppError> {
+        create_dir(&self.folder_path)?;
+        Ok(self)
     }
 
-    fn create_path(&self, extension: FileExtension) -> String {
+    fn create_path(&self, extension: FileExtension) -> Result<String, AppError> {
         let mut path = self.folder_path.join(&self.uuid);
         let extension = extension.to_string();
 
         path.set_extension(extension);
 
-        return path
-            .into_os_string()
-            .into_string()
-            .expect("Could not transform into String");
+        let str_path = path.into_os_string().into_string()?;
+
+        return Ok(str_path);
     }
 
-    async fn save_zip_to_disk(self, field: &mut Field) -> Result<Self, Error> {
-        let zip_file_path = self.create_path(FileExtension::Zip);
+    async fn save_zip_to_disk(self, field: &mut Field) -> Result<Self, AppError> {
+        let zip_file_path = self.create_path(FileExtension::Zip)?;
         let mut f = web::block(move || File::create(zip_file_path)).await??;
 
         // Field in turn is stream of *Bytes* object
@@ -86,14 +89,14 @@ impl Layer {
         Ok(self)
     }
 
-    fn extract_zip(self) -> Self {
-        let zip_file_path = self.create_path(FileExtension::Zip);
+    fn extract_zip(self) -> Result<Self, AppError> {
+        let zip_file_path = self.create_path(FileExtension::Zip)?;
 
-        let file = File::open(zip_file_path).unwrap();
-        let mut archive = ZipArchive::new(file).unwrap();
+        let file = File::open(zip_file_path)?;
+        let mut archive = ZipArchive::new(file)?;
 
         for i in 0..archive.len() {
-            let mut file = archive.by_index(i).unwrap();
+            let mut file = archive.by_index(i)?;
             println!("{:?}", file.enclosed_name());
 
             let outfile = match file.enclosed_name() {
@@ -101,7 +104,9 @@ impl Layer {
                 None => continue,
             };
 
-            let extension = String::from(outfile.extension().unwrap().to_str().unwrap());
+            let extension = outfile
+                .extension()
+                .map_or("", |ext| ext.to_str().map_or("", |ext| ext));
 
             let outpath = self
                 .folder_path
@@ -109,7 +114,7 @@ impl Layer {
 
             if (*file.name()).ends_with('/') {
                 println!("File {} extracted to \"{}\"", i, outpath.display());
-                create_dir(&outpath).unwrap();
+                create_dir(&outpath)?;
             }
             println!(
                 "File {} extracted to \"{}\" ({} bytes)",
@@ -119,20 +124,20 @@ impl Layer {
             );
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
-                    create_dir(p).unwrap();
+                    create_dir(p)?;
                 }
             }
-            let mut outfile = File::create(&outpath).unwrap();
-            copy(&mut file, &mut outfile).unwrap();
+            let mut outfile = File::create(&outpath)?;
+            copy(&mut file, &mut outfile)?;
         }
 
-        self
+        Ok(self)
     }
 
-    fn to_geobuff(self) -> String {
-        let shp_file_path = self.create_path(FileExtension::Shapefile);
-        let mut reader = shapefile::Reader::from_path(shp_file_path).unwrap();
-        let fgb_path = self.create_path(FileExtension::Flatgeobuf);
+    fn to_geobuff(self) -> Result<String, AppError> {
+        let shp_file_path = self.create_path(FileExtension::Shapefile)?;
+        let mut reader = shapefile::Reader::from_path(shp_file_path)?;
+        let fgb_path = self.create_path(FileExtension::Flatgeobuf)?;
 
         let fgb_shape = match &reader.header().shape_type {
             ShapeType::Point => GeometryType::Point,
@@ -151,20 +156,20 @@ impl Layer {
                 },
                 ..Default::default()
             },
-        )
-        .expect("flatgeoboom");
+        )?;
 
         for result in reader.iter_shapes_and_records() {
-            let (shape, _records) = result.unwrap();
-            let geometry = geo_types::Geometry::<f64>::try_from(shape).unwrap();
+            let (shape, _records) = result?;
+            let geometry = geo_types::Geometry::<f64>::try_from(shape)
+                .map_err(|_| AppError::ShpToGeotypesError)?;
 
-            fgb.add_feature_geom(geometry.clone(), |_feat| {}).unwrap();
+            fgb.add_feature_geom(geometry.clone(), |_feat| {})?;
         }
 
-        let mut file = BufWriter::new(std::fs::File::create(&fgb_path).unwrap());
-        fgb.write(&mut file).unwrap();
-        file.flush().unwrap();
+        let mut file = BufWriter::new(std::fs::File::create(&fgb_path)?);
+        fgb.write(&mut file)?;
+        file.flush()?;
 
-        fgb_path
+        Ok(fgb_path)
     }
 }

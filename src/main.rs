@@ -4,7 +4,7 @@ mod layer;
 use std::path::Path;
 
 use actix_multipart::Multipart;
-use actix_web::{middleware, web, App, Error, HttpResponse, HttpServer};
+use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use futures_util::TryStreamExt as _;
 use std::fs::create_dir;
 use uuid::Uuid;
@@ -14,8 +14,8 @@ use s3::creds::Credentials;
 use s3::region::Region;
 use s3::BucketConfiguration;
 
-use self::layer::Layer;
-use errors::AppError;
+use crate::errors::AppError;
+use crate::layer::Layer;
 
 const TMP_FOLDER: &str = "./tmp";
 
